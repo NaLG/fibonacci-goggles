@@ -25,10 +25,14 @@ uint8_t angles[NUM_LEDS] = { 0, 249, 241, 232, 223, 200, 208, 217, 226, 235, 212
 void anglePalette() {
   uint8_t hues = 1;
 
-  for (uint8_t i = 0; i < NUM_LEDS; i++) {
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
     uint8_t x = angles[i];
 
     leds[i] = ColorFromPalette(palettes[currentPaletteIndex], beat8(speed) - (x * hues));
+  }
+  // lt == LT_DUPE
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
+    leds[i+NUM_LEDS_IN_FIB] = leds[i];
   }
 }
 
@@ -40,6 +44,10 @@ void radiusPalette() {
     
     leds[i] = ColorFromPalette(palettes[currentPaletteIndex], beat8(speed) - (r * hues));
   }
+  // lt == LT_DUPE
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
+    leds[i+NUM_LEDS_IN_FIB] = leds[i];
+  }
 }
 
 void xPalette() {
@@ -50,6 +58,10 @@ void xPalette() {
 
     leds[i] = ColorFromPalette(palettes[currentPaletteIndex], beat8(speed) - (x * hues));
   }
+  // lt == LT_DUPE
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
+    leds[i+NUM_LEDS_IN_FIB] = leds[i];
+  }
 }
 
 void yPalette() {
@@ -59,6 +71,10 @@ void yPalette() {
     uint8_t y = coordsY[i];
 
     leds[i] = ColorFromPalette(palettes[currentPaletteIndex], beat8(speed) - (y * hues));
+  }
+  // lt == LT_DUPE
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
+    leds[i+NUM_LEDS_IN_FIB] = leds[i];
   }
 }
 
@@ -71,6 +87,10 @@ void xyPalette() {
 
     leds[i] = ColorFromPalette(palettes[currentPaletteIndex], beat8(speed) - ((x + y) * hues));
   }
+  // lt == LT_DUPE
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
+    leds[i+NUM_LEDS_IN_FIB] = leds[i];
+  }
 }
 
 void angleGradientPalette() {
@@ -80,6 +100,10 @@ void angleGradientPalette() {
     uint8_t x = angles[i];
 
     leds[i] = ColorFromPalette(gCurrentPalette, beat8(speed) - (x * hues));
+  }
+  // lt == LT_DUPE
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
+    leds[i+NUM_LEDS_IN_FIB] = leds[i];
   }
 }
 
@@ -91,6 +115,10 @@ void radiusGradientPalette() {
     
     leds[i] = ColorFromPalette(gCurrentPalette, beat8(speed) - (r * hues));
   }
+  // lt == LT_DUPE
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
+    leds[i+NUM_LEDS_IN_FIB] = leds[i];
+  }
 }
 
 void xGradientPalette() {
@@ -100,6 +128,10 @@ void xGradientPalette() {
     uint8_t x = coordsX[i];
 
     leds[i] = ColorFromPalette(gCurrentPalette, beat8(speed) - (x * hues));
+  }
+  // lt == LT_DUPE
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
+    leds[i+NUM_LEDS_IN_FIB] = leds[i];
   }
 }
 
@@ -111,6 +143,10 @@ void yGradientPalette() {
 
     leds[i] = ColorFromPalette(gCurrentPalette, beat8(speed) - (y * hues));
   }
+  // lt == LT_DUPE
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
+    leds[i+NUM_LEDS_IN_FIB] = leds[i];
+  }
 }
 
 void xyGradientPalette() {
@@ -121,5 +157,9 @@ void xyGradientPalette() {
     uint8_t y = coordsY[i];
 
     leds[i] = ColorFromPalette(gCurrentPalette, beat8(speed) - ((x + y) * hues));
+  }
+  // lt == LT_DUPE
+  for (uint8_t i = 0; i < NUM_LEDS_IN_FIB; i++) {
+    leds[i+NUM_LEDS_IN_FIB] = leds[i];
   }
 }

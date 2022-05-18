@@ -17,7 +17,8 @@
 */
 
 #include <FastLED.h>  // https://github.com/FastLED/FastLED
-#include <Button.h>   // https://github.com/madleech/Button
+
+#include "Adafruit_FreeTouch.h" //https://github.com/adafruit/Adafruit_FreeTouch
 
 FASTLED_USING_NAMESPACE
 
@@ -25,12 +26,14 @@ FASTLED_USING_NAMESPACE
 
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 
-#define DATA_PIN      4
+#define DATA_PIN      A10
 #define LED_TYPE      WS2812B
 #define COLOR_ORDER   GRB
-#define NUM_LEDS      64
+// #define NUM_LEDS      64
+#define NUM_LEDS_IN_FIB  64 // two fibs
+#define NUM_LEDS      128 // two fibs
 
-#define MILLI_AMPS         2000 // IMPORTANT: set the max milli-Amps of your power supply (4A = 4000mA)
+#define MILLI_AMPS         500 // IMPORTANT: set the max milli-Amps of your power supply (4A = 4000mA)
 #define FRAMES_PER_SECOND  120  // here you can control the speed. With the Access Point / Web Server the animations run a bit slower.
 
 CRGB leds[NUM_LEDS];
@@ -39,12 +42,6 @@ const uint8_t brightnessCount = 5;
 uint8_t brightnessMap[brightnessCount] = { 16, 32, 64, 128, 255 };
 int8_t brightnessIndex = 0;
 uint8_t brightness = brightnessMap[brightnessIndex];
-
-const uint8_t PIN_BUTTON_PATTERN = 3;
-const uint8_t PIN_BUTTON_BRIGHTNESS = 2;
-
-Button buttonBrightness(2);
-Button buttonPattern(3);
 
 uint8_t power = 1;
 
@@ -63,6 +60,53 @@ uint8_t cooling = 49;
 uint8_t sparking = 60;
 
 uint8_t speed = 30;
+uint8_t speed_i = 4;
+
+#define NUM_SPEEDS  7
+uint8_t speeds[NUM_SPEEDS] = {1,3,9,18,30,50,80};
+
+
+//  Goggle things:
+enum lenstype {LT_LEFT, LT_RIGHT, LT_DUPE, LT_EACH, LT_WHOLE};
+
+///////////////////////////////////////////////////////////////////////
+
+//  Touch things:
+
+
+
+Adafruit_FreeTouch touch0 = Adafruit_FreeTouch(A0, OVERSAMPLE_4, RESISTOR_0, FREQ_MODE_NONE);
+Adafruit_FreeTouch touch1 = Adafruit_FreeTouch(A1, OVERSAMPLE_4, RESISTOR_0, FREQ_MODE_NONE);
+Adafruit_FreeTouch touch2 = Adafruit_FreeTouch(A2, OVERSAMPLE_4, RESISTOR_0, FREQ_MODE_NONE);
+Adafruit_FreeTouch touch3 = Adafruit_FreeTouch(A3, OVERSAMPLE_4, RESISTOR_0, FREQ_MODE_NONE);
+
+#define touchPointCount 4
+
+// These values were discovered using the commented-out Serial.print statements in handleTouch below
+
+// minimum values for each touch pad, used to filter out noise
+uint16_t touchMin[touchPointCount] = { 558, 259, 418, 368 };
+// uint16_t touchMin[touchPointCount] = { 558, 259, 118, 168 };
+
+// maximum values for each touch pad, used to determine when a pad is touched
+uint16_t touchMax[touchPointCount] = { 1016, 1016, 1016, 1016 };
+// uint16_t touchMax[touchPointCount] = { 1016, 1016, 616, 616 };
+
+// raw capacitive touch sensor readings
+uint16_t touchRaw[touchPointCount] = { 0, 0, 0, 0 };
+
+// capacitive touch sensor readings, mapped/scaled one one byte each (0-255)
+uint8_t touch[touchPointCount] = { 0, 0, 0, 0 };
+
+// whether we've read a touch here or not
+uint8_t touchActive[touchPointCount] = { 0, 0, 0, 0 };
+
+// coordinates of the touch points
+uint8_t touchPointX[touchPointCount] = { 255, 0, 0, 255 };
+uint8_t touchPointY[touchPointCount] = { 0, 0, 255, 255 };
+
+boolean activeWaves = false;
+
 
 ///////////////////////////////////////////////////////////////////////
 
@@ -201,26 +245,20 @@ PatternList patterns = {
 
 const uint8_t patternCount = ARRAY_SIZE(patterns);
 
-void handleInput() {
-  if (buttonPattern.released())
-  {
-    Serial.println("Pattern button released");
-    if (autoplay) {
-      autoplay = 0;
-      Serial.println("Autoplay: off");
-    }
-    adjustPattern(true);
-  }
-
-  if (buttonBrightness.released()) {
-    Serial.println("Brightness button released");
-    adjustBrightness(true);
-  }
-}
-
 void setup() {
   Serial.begin(115200);
   delay(100);
+
+
+  if (!touch0.begin())
+    Serial.println("Failed to begin qt on pin A0");
+  if (!touch1.begin())
+    Serial.println("Failed to begin qt on pin A1");
+  if (!touch2.begin())
+    Serial.println("Failed to begin qt on pin A2");
+  if (!touch3.begin())
+    Serial.println("Failed to begin qt on pin A3");
+
 
   FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setDither(false);
@@ -233,16 +271,15 @@ void setup() {
   FastLED.setBrightness(brightness);
 
   autoPlayTimeout = millis() + (autoplayDuration * 1000);
-
-  buttonBrightness.begin();
-  buttonPattern.begin();
 }
 
 void loop() {
   // Add entropy to random number generator; we use a lot of it.
   random16_add_entropy(random(65535));
 
-  handleInput();
+
+  handleTouch();
+
 
   if (power == 0) {
     fill_solid(leds, NUM_LEDS, CRGB::Black);
@@ -270,6 +307,16 @@ void loop() {
 
   // Call the current pattern function once, updating the 'leds' array
   patterns[currentPatternIndex]();
+
+
+  // ADD touch layer on top:
+  // if (!activeWaves)
+    // colorWavesFibonacci();
+
+  touchControls();
+  // touchDemo();
+
+
 
   FastLED.show();
 
@@ -438,10 +485,16 @@ void pride() {
 }
 
 void prideFibonacci() {
-  fillWithPride(true);
+  // fillWithPride(true, LT_DUPE);
+  fillWithPride(true, LT_WHOLE);
 }
 
-void fillWithPride(bool useFibonacciOrder) {
+void fillWithPride(bool useFibonacciOrder) 
+{
+  fillWithPride(useFibonacciOrder, LT_WHOLE);
+}
+void fillWithPride(bool useFibonacciOrder, lenstype lt) 
+{
   static uint16_t sPseudotime = 0;
   static uint16_t sLastMillis = 0;
   static uint16_t sHue16 = 0;
@@ -452,35 +505,67 @@ void fillWithPride(bool useFibonacciOrder) {
   uint8_t msmultiplier = beatsin88(147, 23, 60);
 
   uint16_t hue16 = sHue16;//gHue * 256;
-  uint16_t hueinc16 = beatsin88(113, 1, 3000);
+  uint16_t hueinc16 = beatsin88(113, 1, 3000)/4;
 
   uint16_t ms = millis();
-  uint16_t deltams = ms - sLastMillis ;
+  // uint16_t deltams = ms - sLastMillis ;
+  uint16_t deltams = ((ms - sLastMillis) * speed) /32 ; // scale to speed
   sLastMillis  = ms;
   sPseudotime += deltams * msmultiplier;
   sHue16 += deltams * beatsin88( 400, 5, 9);
   uint16_t brightnesstheta16 = sPseudotime;
 
-  for ( uint16_t i = 0 ; i < NUM_LEDS; i++) {
-    hue16 += hueinc16;
-    uint8_t hue8 = hue16 / 256;
+  if (lt == LT_DUPE)
+  {
+    for ( uint16_t i = 0 ; i < NUM_LEDS_IN_FIB; i++) {
+      hue16 += hueinc16;
+      uint8_t hue8 = hue16 / 256;
 
-    brightnesstheta16  += brightnessthetainc16;
-    uint16_t b16 = sin16( brightnesstheta16  ) + 32768;
+      brightnesstheta16  += brightnessthetainc16;
+      uint16_t b16 = sin16( brightnesstheta16  ) + 32768;
 
-    uint16_t bri16 = (uint32_t)((uint32_t)b16 * (uint32_t)b16) / 65536;
-    uint8_t bri8 = (uint32_t)(((uint32_t)bri16) * brightdepth) / 65536;
-    bri8 += (255 - brightdepth);
+      uint16_t bri16 = (uint32_t)((uint32_t)b16 * (uint32_t)b16) / 65536;
+      uint8_t bri8 = (uint32_t)(((uint32_t)bri16) * brightdepth) / 65536;
+      bri8 += (255 - brightdepth);
 
-    CRGB newcolor = CHSV( hue8, sat8, bri8);
+      CRGB newcolor = CHSV( hue8, sat8, bri8);
 
-    uint16_t pixelnumber = i;
+      uint16_t pixelnumber = i;
 
-    if (useFibonacciOrder) pixelnumber = fibonacciToPhysical[i];
-    
-    pixelnumber = (NUM_LEDS - 1) - pixelnumber;
+      if (useFibonacciOrder) pixelnumber = fibonacciToPhysical[i];
+      
+      pixelnumber = (NUM_LEDS_IN_FIB - 1) - pixelnumber;
 
-    nblend( leds[pixelnumber], newcolor, 64);
+      nblend( leds[pixelnumber], newcolor, 64);
+      // DUPE:
+      nblend( leds[pixelnumber+NUM_LEDS_IN_FIB], newcolor, 64);
+    }
+  }
+  else // LT_WHOLE
+  {
+    for ( uint16_t i = 0 ; i < NUM_LEDS; i++) {
+      hue16 += hueinc16;
+      uint8_t hue8 = hue16 / 256;
+
+      brightnesstheta16  += brightnessthetainc16;
+      uint16_t b16 = sin16( brightnesstheta16  ) + 32768;
+
+      uint16_t bri16 = (uint32_t)((uint32_t)b16 * (uint32_t)b16) / 65536;
+      uint8_t bri8 = (uint32_t)(((uint32_t)bri16) * brightdepth) / 65536;
+      bri8 += (255 - brightdepth);
+
+      CRGB newcolor = CHSV( hue8, sat8, bri8);
+
+      uint16_t pixelnumber = i;
+
+      if (useFibonacciOrder) pixelnumber = fibonacciToPhysical[i%NUM_LEDS_IN_FIB];
+      
+      pixelnumber = (NUM_LEDS - 1) - pixelnumber;
+      if (i >= NUM_LEDS_IN_FIB)
+        pixelnumber -= NUM_LEDS_IN_FIB;
+
+      nblend( leds[pixelnumber], newcolor, 64);
+    }
   }
 }
 
@@ -579,10 +664,15 @@ void colorWavesFibonacci() {
   fillWithColorWaves(leds, NUM_LEDS, gCurrentPalette, true);
 }
 
+void fillWithColorWaves( CRGB* ledarray, uint16_t numleds, CRGBPalette16& palette, bool useFibonacciOrder)
+{
+  fillWithColorWaves(ledarray, numleds, palette, useFibonacciOrder, LT_WHOLE);
+
+}
 // ColorWavesWithPalettes by Mark Kriegsman: https://gist.github.com/kriegsman/8281905786e8b2632aeb
 // This function draws color waves with an ever-changing,
 // widely-varying set of parameters, using a color palette.
-void fillWithColorWaves( CRGB* ledarray, uint16_t numleds, CRGBPalette16& palette, bool useFibonacciOrder)
+void fillWithColorWaves( CRGB* ledarray, uint16_t numleds, CRGBPalette16& palette, bool useFibonacciOrder, lenstype lt)
 {
   static uint16_t sPseudotime = 0;
   static uint16_t sLastMillis = 0;
@@ -597,42 +687,85 @@ void fillWithColorWaves( CRGB* ledarray, uint16_t numleds, CRGBPalette16& palett
   uint16_t hueinc16 = beatsin88(113, 300, 1500);
 
   uint16_t ms = millis();
-  uint16_t deltams = ms - sLastMillis ;
+  // uint16_t deltams = ms - sLastMillis ;
+  uint16_t deltams = ((ms - sLastMillis) * speed) /32 ; // scale to speed
   sLastMillis  = ms;
   sPseudotime += deltams * msmultiplier;
   sHue16 += deltams * beatsin88( 400, 5, 9);
   uint16_t brightnesstheta16 = sPseudotime;
 
-  for ( uint16_t i = 0 ; i < numleds; i++) {
-    hue16 += hueinc16;
-    uint8_t hue8 = hue16 / 256;
-    uint16_t h16_128 = hue16 >> 7;
-    if ( h16_128 & 0x100) {
-      hue8 = 255 - (h16_128 >> 1);
-    } else {
-      hue8 = h16_128 >> 1;
+  if (lt == LT_DUPE)
+  {
+    for ( uint16_t i = 0 ; i < numleds; i++) {
+      hue16 += hueinc16;
+      uint8_t hue8 = hue16 / 256;
+      uint16_t h16_128 = hue16 >> 7;
+      if ( h16_128 & 0x100) {
+        hue8 = 255 - (h16_128 >> 1);
+      } else {
+        hue8 = h16_128 >> 1;
+      }
+
+      brightnesstheta16  += brightnessthetainc16;
+      uint16_t b16 = sin16( brightnesstheta16  ) + 32768;
+
+      uint16_t bri16 = (uint32_t)((uint32_t)b16 * (uint32_t)b16) / 65536;
+      uint8_t bri8 = (uint32_t)(((uint32_t)bri16) * brightdepth) / 65536;
+      bri8 += (255 - brightdepth);
+
+      uint8_t index = hue8;
+      //index = triwave8( index);
+      index = scale8( index, 240);
+
+      CRGB newcolor = ColorFromPalette( palette, index, bri8);
+
+      uint16_t pixelnumber = i;
+
+      if (useFibonacciOrder) pixelnumber = fibonacciToPhysical[i];
+      
+      pixelnumber = (numleds - 1) - pixelnumber;
+
+      nblend( ledarray[pixelnumber], newcolor, 128);
+      // DUPE
+      nblend( ledarray[pixelnumber-NUM_LEDS_IN_FIB], newcolor, 128);
     }
+  }
+  else // LT_WHOLE  yeah
+  {
+    for ( uint16_t i = 0 ; i < numleds; i++) {
+      hue16 += hueinc16;
+      uint8_t hue8 = hue16 / 256;
+      uint16_t h16_128 = hue16 >> 7;
+      if ( h16_128 & 0x100) {
+        hue8 = 255 - (h16_128 >> 1);
+      } else {
+        hue8 = h16_128 >> 1;
+      }
 
-    brightnesstheta16  += brightnessthetainc16;
-    uint16_t b16 = sin16( brightnesstheta16  ) + 32768;
+      brightnesstheta16  += brightnessthetainc16;
+      uint16_t b16 = sin16( brightnesstheta16  ) + 32768;
 
-    uint16_t bri16 = (uint32_t)((uint32_t)b16 * (uint32_t)b16) / 65536;
-    uint8_t bri8 = (uint32_t)(((uint32_t)bri16) * brightdepth) / 65536;
-    bri8 += (255 - brightdepth);
+      uint16_t bri16 = (uint32_t)((uint32_t)b16 * (uint32_t)b16) / 65536;
+      uint8_t bri8 = (uint32_t)(((uint32_t)bri16) * brightdepth) / 65536;
+      bri8 += (255 - brightdepth);
 
-    uint8_t index = hue8;
-    //index = triwave8( index);
-    index = scale8( index, 240);
+      uint8_t index = hue8;
+      //index = triwave8( index);
+      index = scale8( index, 240);
 
-    CRGB newcolor = ColorFromPalette( palette, index, bri8);
+      CRGB newcolor = ColorFromPalette( palette, index, bri8);
 
-    uint16_t pixelnumber = i;
+      uint16_t pixelnumber = i;
 
-    if (useFibonacciOrder) pixelnumber = fibonacciToPhysical[i];
-    
-    pixelnumber = (numleds - 1) - pixelnumber;
+      if (useFibonacciOrder) pixelnumber = fibonacciToPhysical[i%NUM_LEDS_IN_FIB];
 
-    nblend( ledarray[pixelnumber], newcolor, 128);
+      pixelnumber = (numleds - 1) - pixelnumber;
+
+      if (i>=NUM_LEDS_IN_FIB)
+        pixelnumber -= NUM_LEDS_IN_FIB;
+
+      nblend( ledarray[pixelnumber], newcolor, 128);
+    }
   }
 }
 
@@ -644,3 +777,282 @@ void palettetest( CRGB* ledarray, uint16_t numleds, const CRGBPalette16& gCurren
   startindex--;
   fill_palette( ledarray, numleds, startindex, (256 / NUM_LEDS) + 1, gCurrentPalette, 255, LINEARBLEND);
 }
+
+
+bool touchChanged = true;
+
+void handleTouch() {
+  for (uint8_t i = 0; i < touchPointCount; i++) {
+    if (i == 0) touchRaw[i] = touch0.measure();
+    else if (i == 1) touchRaw[i] = touch1.measure();
+    else if (i == 2) touchRaw[i] = touch2.measure();
+    else if (i == 3) touchRaw[i] = touch3.measure();
+
+    // // uncomment to display raw touch values in the serial monitor/plotter
+    //    Serial.print(touchRaw[i]);
+    //    Serial.print(" ");
+
+    if (touchRaw[i] < touchMin[i]) {
+      touchMin[i] = touchRaw[i];
+      touchChanged = true;
+    }
+
+    if (touchRaw[i] > touchMax[i]) {
+      touchMax[i] = touchRaw[i];
+      touchChanged = true;
+    }
+
+    touch[i] = map(touchRaw[i], touchMin[i], touchMax[i], 0, 255);
+
+    // // uncomment to display mapped/scaled touch values in the serial monitor/plotter
+    //    Serial.print(touch[i]);
+    //    Serial.print(" ");
+  }
+
+  // // uncomment to display raw and/or mapped/scaled touch values in the serial monitor/plotter
+  //  Serial.println();
+
+  // uncomment to display raw, scaled, min, max touch values in the serial monitor/plotter
+  //  if (touchChanged) {
+  //    for (uint8_t i = 0; i < touchPointCount; i++) {
+  //      Serial.print(touchRaw[i]);
+  //      Serial.print(" ");
+  //      Serial.print(touch[i]);
+  //      Serial.print(" ");
+  //      Serial.print(touchMin[i]);
+  //      Serial.print(" ");
+  //      Serial.print(touchMax[i]);
+  //      Serial.print(" ");
+  //    }
+  //
+  //    Serial.println();
+  //
+  //    touchChanged = false;
+  //  }
+}
+
+
+// adds a color to a pixel given it's XY coordinates and a "thickness" of the logical pixel
+// since we're using a sparse logical grid for mapping, there isn't an LED at every XY coordinate
+// thickness adds a little "fuzziness"
+void addColorXY(int x, int y, CRGB color, uint8_t thickness = 0)
+{
+  // ignore coordinates outside of our one byte map range
+  if (x < 0 || x > 255 || y < 0 || y > 255) return;
+
+  // loop through all of the LEDs
+  for (uint8_t i = 0; i < NUM_LEDS; i++) {
+    // get the XY coordinates of the current LED
+    uint8_t ix = coordsX[i];
+    uint8_t iy = coordsY[i];
+
+    // are the current LED's coordinates within the square centered
+    // at X,Y, with width and height of thickness?
+    if (ix >= x - thickness && ix <= x + thickness &&
+        iy >= y - thickness && iy <= y + thickness) {
+
+      // add to the color instead of just setting it
+      // so that colors blend
+      // FastLED automatically prevents overflowing over 255
+      leds[i] += color;
+    }
+  }
+}
+
+// algorithm from http://en.wikipedia.org/wiki/Midpoint_circle_algorithm
+void drawCircle(int x0, int y0, int radius, const CRGB color, uint8_t thickness = 0)
+{
+  int a = radius, b = 0;
+  int radiusError = 1 - a;
+
+  if (radius == 0) {
+    addColorXY(x0, y0, color, thickness);
+    return;
+  }
+
+  while (a >= b)
+  {
+    addColorXY(a + x0, b + y0, color, thickness);
+    addColorXY(b + x0, a + y0, color, thickness);
+    addColorXY(-a + x0, b + y0, color, thickness);
+    addColorXY(-b + x0, a + y0, color, thickness);
+    addColorXY(-a + x0, -b + y0, color, thickness);
+    addColorXY(-b + x0, -a + y0, color, thickness);
+    addColorXY(a + x0, -b + y0, color, thickness);
+    addColorXY(b + x0, -a + y0, color, thickness);
+
+    b++;
+    if (radiusError < 0)
+      radiusError += 2 * b + 1;
+    else
+    {
+      a--;
+      radiusError += 2 * (b - a + 1);
+    }
+  }
+}
+
+// algorithm from http://en.wikipedia.org/wiki/Midpoint_circle_algorithm
+void drawLayerCircle(int x0, int y0, int radius, const CRGB color, uint8_t thickness = 0) //, uint8_t blend = 0)
+{
+  int a = radius, b = 0;
+  int radiusError = 1 - a;
+
+  if (radius == 0) {
+    addColorXY(x0, y0, color, thickness);
+    return;
+  }
+
+  while (a >= b)
+  {
+    addColorXY(a + x0, b + y0, color, thickness);
+    addColorXY(b + x0, a + y0, color, thickness);
+    addColorXY(-a + x0, b + y0, color, thickness);
+    addColorXY(-b + x0, a + y0, color, thickness);
+    addColorXY(-a + x0, -b + y0, color, thickness);
+    addColorXY(-b + x0, -a + y0, color, thickness);
+    addColorXY(a + x0, -b + y0, color, thickness);
+    addColorXY(b + x0, -a + y0, color, thickness);
+
+    b++;
+    if (radiusError < 0)
+      radiusError += 2 * b + 1;
+    else
+    {
+      a--;
+      radiusError += 2 * (b - a + 1);
+    }
+  }
+}
+
+const uint8_t waveCount = 8;
+
+// track the XY coordinates and radius of each wave
+uint16_t radii[waveCount];
+uint8_t waveX[waveCount];
+uint8_t waveY[waveCount];
+CRGB waveColor[waveCount];
+
+const uint16_t maxRadius = 512;
+
+
+void touchControls() 
+{
+
+  for (uint8_t i = 0; i < touchPointCount; i++) {
+    // change a setting when there's a new touch
+    if (touch[i] > 127) 
+    {
+      if (touchActive[i] == 5) // debounce
+      {
+        if (i==0) // speed A0 - speed up
+        {
+          speed_i ++;
+          speed_i %= NUM_SPEEDS;
+          speed = speeds[speed_i];
+        }
+        if (i==1) // mode A1 - go forward, turn on autoplay
+        {
+          adjustPattern(true);
+          autoplay = true;
+          autoPlayTimeout = millis() + (autoplayDuration * 1000);
+        }
+      }
+      else if (touchActive[i] == 40) // long press
+      {
+        if (i==0) // speed A0 - slow down
+        {
+          speed_i += NUM_SPEEDS -2 ;
+          speed_i %= NUM_SPEEDS;
+          speed = speeds[speed_i];
+        }
+        if (i==1) // mode A1 - go back and stop autoplay
+        {
+          adjustPattern(false);
+          adjustPattern(false);
+          autoplay = false;
+          // autoPlayTimeout = millis() + (autoplayDuration * 1000);
+        }
+
+      }
+      else if (touchActive[i] == 100) // longer press
+      {
+        if (i==0) // speed A0 - slow down
+        {
+          adjustBrightness(true);
+          touchActive[i]= 41; // gear up for another brightness increase
+        }
+        if (i==1) // mode A1 - go back and stop autoplay
+        {
+        }
+
+      }
+      else if (touchActive[i] == 250) // hold
+      {
+        touchActive[i]--;
+      }
+      touchActive[i]++;
+    }
+    else
+    {
+      touchActive[i] = 0;
+    }
+  }
+
+}
+
+void touchDemo() {
+  // fade all of the LEDs a small amount each frame
+  // increasing this number makes the waves fade faster
+  // fadeToBlackBy(leds, NUM_LEDS, 30);
+
+  for (uint8_t i = 0; i < touchPointCount; i++) 
+  {
+    // start new waves when there's a new touch
+    if (touch[i] > 127 && radii[i] == 0) {
+      radii[i] = 32;
+      waveX[i] = touchPointX[i];
+      waveY[i] = touchPointY[i];
+      waveColor[i] = CHSV(random8(), 255, 255);
+    }
+  }
+
+  activeWaves = false;
+
+  for (uint8_t i = 0; i < waveCount; i++)
+  {
+    // increment radii if it's already been set in motion
+    if (radii[i] > 0 && radii[i] < maxRadius) radii[i] = radii[i] + 8;
+
+    // reset waves already at max
+    if (radii[i] >= maxRadius) {
+      activeWaves = true;
+      radii[i] = 0;
+    }
+
+    if (radii[i] == 0)
+      continue;
+
+    activeWaves = true;
+
+    CRGB color = waveColor[i];
+
+    uint8_t x = waveX[i];
+    uint8_t y = waveY[i];
+
+    // draw waves starting from the corner closest to each touch sensor
+    // drawCircle(x, y, radii[i], color, 4);
+    drawCircle(x, y, radii[i], color, 8);
+    if (radii[i] > 8)
+    {
+      color = color.nscale8(128);
+      drawCircle(x, y, radii[i]-8, color, 8);
+      if (radii[i] > 16)
+      {
+        color = color.nscale8(128);
+        drawCircle(x, y, radii[i]-16, color, 8);
+      }
+    }
+  }
+}
+
