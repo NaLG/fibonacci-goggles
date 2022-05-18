@@ -37,7 +37,8 @@ FASTLED_USING_NAMESPACE
 // BUT fastled assumes WS2812B = 33.5 ah.
 // So our top end is something like 640 *33.5 / 5 = 4288
 // The little powercore mini anker 3350 I'm using max out at 1amp sooo ... we're good.
-#define MILLI_AMPS         1600 // IMPORTANT: set the max milli-Amps of your power supply (4A = 4000mA)
+#define MILLI_AMPS         1600 // IMPORTANT: set the max milli-Amps of your power supply (4A = 4000mA)i
+//                     1600 -> 300ish ma -> 10ish hours on full??
 #define FRAMES_PER_SECOND  120  // here you can control the speed. With the Access Point / Web Server the animations run a bit slower.
 
 CRGB leds[NUM_LEDS];
@@ -179,7 +180,7 @@ typedef Pattern PatternList[];
 #include "Twinkles.h"
 #include "TwinkleFOX.h"
 #include "Map.h"
-//#include "Noise.h"
+// #include "Noise.h"
 
 // List of patterns to cycle through.  Each is defined as a separate function below.
 
@@ -198,6 +199,8 @@ PatternList patterns = {
 
   angleGradientPalette,
   radiusGradientPalette,
+// test:
+  radiusGradientPaletteWhole, 
   xGradientPalette,
   yGradientPalette,
   xyGradientPalette,
@@ -963,6 +966,7 @@ void touchControls()
         if (i==1) // mode A1 - go forward, turn on autoplay
         {
           adjustPattern(true);
+          autoplay = true;
           autoPlayTimeout = millis() + (autoplayDuration * 1000);
         }
       }
@@ -986,8 +990,11 @@ void touchControls()
       {
         if (i==0) // speed A0 - slow down
         {
+          // adjust brightness, and put speed back
           adjustBrightness(true);
-          touchActive[i]= 41; // gear up for another brightness increase
+          speed_i ++;
+          speed_i %= NUM_SPEEDS;
+          speed = speeds[speed_i];
         }
         if (i==1) // mode A1 - Change autoplay speed...
         {
@@ -997,11 +1004,22 @@ void touchControls()
         }
 
       }
-      else if (touchActive[i] == 200) // longerer press
+      else if (touchActive[i] == 160) // longerer press
       {
         if (i==0) // speed A0 
         {
-          // should not be reached
+          adjustBrightness(true);
+          touchActive[i]= 101; // gear up for another brightness increase
+        }
+        if (i==1) // mode A1 - 
+        {
+        }
+
+      }
+      else if (touchActive[i] == 220) // longerer press
+      {
+        if (i==0) // speed A0 
+        {
         }
         if (i==1) // mode A1 - reset autoplay speed...
         {

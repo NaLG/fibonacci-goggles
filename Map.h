@@ -121,6 +121,45 @@ void radiusGradientPalette() {
   }
 }
 
+int8_t RGP_curShift = 0; // signed
+void radiusGradientPaletteWhole() {
+  uint8_t hues = 1;
+  int8_t shift = 0;
+
+  if (random8() > 245)
+  {
+    int16_t drift = random8()+random8()+random8()+random8(); // avg 510
+    drift += 2; //avg 512
+    drift >>= 7; // avg 4
+    drift -= 4;
+    RGP_curShift += drift;
+    if (RGP_curShift < -60)
+      RGP_curShift = -60;
+    else if (RGP_curShift > 60)
+      RGP_curShift = 60;
+  }
+
+  if (random8() > 253)
+  {
+    if (RGP_curShift < -15)
+      RGP_curShift += 1;
+    else if (RGP_curShift > 15)
+      RGP_curShift -= 1;
+  }
+
+
+  for (uint8_t i = 0; i < NUM_LEDS; i++) {
+    uint8_t r = physicalToFibonacci[i%NUM_LEDS_IN_FIB];
+    if (i>NUM_LEDS_IN_FIB)
+      shift = RGP_curShift;
+    else
+      shift = 0;
+    
+    // lt == LT_WHOLE
+    leds[i] = ColorFromPalette(gCurrentPalette, beat8(speed) - (r * hues) +shift);
+  }
+}
+
 void xGradientPalette() {
   uint8_t hues = 1;
   
