@@ -33,7 +33,11 @@ FASTLED_USING_NAMESPACE
 #define NUM_LEDS_IN_FIB  64 // two fibs
 #define NUM_LEDS      128 // two fibs
 
-#define MILLI_AMPS         500 // IMPORTANT: set the max milli-Amps of your power supply (4A = 4000mA)
+// 64 ws2812C-2020 leds are 5ma full white, theoretically 320 milliamps at full white.  x2 is max 640.
+// BUT fastled assumes WS2812B = 33.5 ah.
+// So our top end is something like 640 *33.5 / 5 = 4288
+// The little powercore mini anker 3350 I'm using max out at 1amp sooo ... we're good.
+#define MILLI_AMPS         1600 // IMPORTANT: set the max milli-Amps of your power supply (4A = 4000mA)
 #define FRAMES_PER_SECOND  120  // here you can control the speed. With the Access Point / Web Server the animations run a bit slower.
 
 CRGB leds[NUM_LEDS];
@@ -125,8 +129,13 @@ CRGBPalette16 IceColors_p = CRGBPalette16(CRGB::Black, CRGB::Blue, CRGB::Aqua, C
 int8_t currentPatternIndex = 0; // Index number of which pattern is current
 uint8_t autoplay = 1;
 
-uint8_t autoplayDuration = 10;
+
+#define NUM_AP_DURATIONS  5
+uint8_t autoplayDurations[NUM_AP_DURATIONS] = {5,10,20,60,180};
+uint8_t autoplayDuration_i = 1;
+uint8_t autoplayDuration = autoplayDurations[autoplayDuration_i];
 unsigned long autoPlayTimeout = 0;
+
 
 uint8_t showClock = 0;
 uint8_t clockBackgroundFade = 240;
@@ -943,7 +952,7 @@ void touchControls()
     // change a setting when there's a new touch
     if (touch[i] > 127) 
     {
-      if (touchActive[i] == 5) // debounce
+      if (touchActive[i] == 3) // 5  // debounce
       {
         if (i==0) // speed A0 - speed up
         {
@@ -954,7 +963,6 @@ void touchControls()
         if (i==1) // mode A1 - go forward, turn on autoplay
         {
           adjustPattern(true);
-          autoplay = true;
           autoPlayTimeout = millis() + (autoplayDuration * 1000);
         }
       }
@@ -971,7 +979,6 @@ void touchControls()
           adjustPattern(false);
           adjustPattern(false);
           autoplay = false;
-          // autoPlayTimeout = millis() + (autoplayDuration * 1000);
         }
 
       }
@@ -982,8 +989,24 @@ void touchControls()
           adjustBrightness(true);
           touchActive[i]= 41; // gear up for another brightness increase
         }
-        if (i==1) // mode A1 - go back and stop autoplay
+        if (i==1) // mode A1 - Change autoplay speed...
         {
+          autoplayDuration_i ++;
+          autoplayDuration_i %= NUM_AP_DURATIONS;
+          autoplayDuration = autoplayDurations[autoplayDuration_i];
+        }
+
+      }
+      else if (touchActive[i] == 200) // longerer press
+      {
+        if (i==0) // speed A0 
+        {
+          // should not be reached
+        }
+        if (i==1) // mode A1 - reset autoplay speed...
+        {
+          autoplayDuration_i = 1;
+          autoplayDuration = autoplayDurations[autoplayDuration_i];
         }
 
       }
